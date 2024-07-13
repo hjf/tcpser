@@ -240,6 +240,7 @@ int getcmd(char line[],
           (*index)++;
         }
         break;
+      case 'B':       // handle NMBR=
       case 'D':       // handle Dialing.
         (*index)++;
         *num = 0;
@@ -247,6 +248,8 @@ int getcmd(char line[],
           switch(toupper(line[*index])) {
             case 0:
                 return cmd;
+            case 'R': // if NMBR=, skip the '='
+              (*index)++;
             case 'T':
             case 'P':
             case 'L':

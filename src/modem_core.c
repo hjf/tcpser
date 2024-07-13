@@ -262,6 +262,7 @@ int mdm_answer(modem_config *cfg) {
 int mdm_connect(modem_config *cfg) {
   off_hook(cfg);
   cfg->is_cmd_mode = FALSE;
+  cfg->is_callerid = FALSE;
   if(cfg->conn_type == MDM_CONN_NONE) {
     if(line_connect(&cfg->line_data, cfg->dialno) == 0) {
       cfg->conn_type = MDM_CONN_OUTGOING;
@@ -324,7 +325,11 @@ int mdm_parse_cmd(modem_config* cfg) {
   char tmp[256];
 
   LOG_ENTER();
+  if(cfg->is_callerid == TRUE){
+  LOG(LOG_DEBUG, "Evaluating Caller ID NM%s", command);
+  } else {
   LOG(LOG_DEBUG, "Evaluating AT%s", command);
+  }
 
   while(TRUE != done ) {
     if(cmd != AT_CMD_ERR) {
@@ -340,33 +345,14 @@ int mdm_parse_cmd(modem_config* cfg) {
           end
          );
     }
-    switch(cmd) {
-      case AT_CMD_ERR:
+    if(cfg->is_callerid){
+      if (cmd==AT_CMD_ERR){
         mdm_send_response(MDM_RESP_ERROR, cfg);
         done = TRUE;
-        break;
-      case AT_CMD_END:
-        if(cfg->is_cmd_mode == TRUE)
-          mdm_send_response(MDM_RESP_OK, cfg);
-        done = TRUE;
-        break;
-      case AT_CMD_NONE:
-        done = TRUE;
-        break;
-      case 'O':
-      case 'A':
-          mdm_answer(cfg);
-          cmd = AT_CMD_END;
-          done = TRUE;
-          break;
-      case 'B':   // 212A versus V.22 connection
-        if(num > 1) {
-          cmd = AT_CMD_ERR;
-        } else {
-          //cfg->connect_1200 = num;
-        }
-        break;
-      case 'D':
+      }else if(cmd!='B'){
+        cfg->is_callerid=FALSE;
+        cmd = AT_CMD_ERR;
+      }else{
         if(end > start) {
           strncpy(cfg->dialno, (char *)command + start, end - start);
           cfg->dialno[end - start] = '\0';
@@ -375,180 +361,231 @@ int mdm_parse_cmd(modem_config* cfg) {
           strncpy((char *)cfg->last_dialno, (char *)command+start, end - start);
           cfg->last_dialno[end - start] = '\0';
           cfg->memory_dial = FALSE;
-        } else if (num == 'L') {
-          strncpy(cfg->dialno, cfg->last_dialno, strlen(cfg->last_dialno));
-          cfg->dial_type = cfg->last_dial_type;
-          cfg->memory_dial = TRUE;
-          mdm_write(cfg, (unsigned char *)cfg->crlf, 2);
-          mdm_write(cfg, (unsigned char *)cfg->dialno, strlen(cfg->dialno));
         } else {
           cfg->dialno[0] = 0;
           cfg->last_dialno[0] = 0;
           cfg->dial_type = 0;
           cfg->last_dial_type = 0;
         }
-      if (strlen(cfg->dialno) > 0) {
-          mdm_connect(cfg);
-        } else {
-          mdm_off_hook(cfg);
-          cfg->is_cmd_mode = FALSE;
-        }
-        done = TRUE;
-        break;
-      case 'E':   // still need to define #2
-        if(num == 0)
-          cfg->is_echo = FALSE;
-        else if(num == 1)
-          cfg->is_echo = TRUE;
-        else {
-          cmd = AT_CMD_ERR;
-        }
-        break;
-      case 'H':
-          if(num == 0) {
-            mdm_disconnect(cfg, FALSE);
-          } else if(num == 1) {
-            mdm_off_hook(cfg);
-          } else
+        if (strlen(cfg->dialno) > 0) {
+            mdm_connect(cfg);
+            done = TRUE;
+          } else {
+            LOG(LOG_ERROR, "NMBR= received, but no number specified");
             cmd = AT_CMD_ERR;
+          }
+      }
+    } else {
+      switch(cmd) {
+        case AT_CMD_ERR:
+          mdm_send_response(MDM_RESP_ERROR, cfg);
+          done = TRUE;
           break;
-      case 'I':   // Information.
-        break;
-      case 'L':   // Speaker volume
-        if(num < 1 || num > 3)
-          cmd = AT_CMD_ERR;
-        else {
-          //cfg->volume = num;
-        }
-        break;
-      case 'M':   // speaker settings
-        if(num > 3)
-          cmd=AT_CMD_ERR;
-        else {
-          //cfg->speaker_setting = num;
-        }
-        break;
-      case 'N':   // automode negotiate
-        if(num > 1)
-          cmd=AT_CMD_ERR;
-        else {
-          //cfg->auto_mode=num;
-        }
-        break;
-      case 'P':   // defaut to pulse dialing
-        //cfg->default_dial_type=MDM_DT_PULSE;
-        break;
-      case 'Q':   // still need to define #2
-        if(num == 0)
-          cfg->send_responses = TRUE;
-        else if(num == 1)
-          cfg->send_responses = FALSE;
-        else if(num == 2)  // this should be yes orig/no answer.
-          cfg->send_responses = TRUE;
-        else {
-          cmd = AT_CMD_ERR;
-        }
-        break;
-      case 'S':
-        strncpy(tmp, command + start, end - start);
-        tmp[end - start] = '\0';
-        if(num < sizeof(cfg->s)) {
-          cfg->s[num] = atoi(tmp); // TODO do not assume this is always a number...
+        case AT_CMD_END:
+          if(cfg->is_cmd_mode == TRUE)
+            mdm_send_response(MDM_RESP_OK, cfg);
+          done = TRUE;
+          break;
+        case AT_CMD_NONE:
+          done = TRUE;
+          break;
+        case 'O':
+        case 'A':
+            mdm_answer(cfg);
+            cmd = AT_CMD_END;
+            done = TRUE;
+            break;
+        case 'B':   // 212A versus V.22 connection
+          if(num > 1) {
+            cmd = AT_CMD_ERR;
+          } else {
+            //cfg->connect_1200 = num;
+          }
+          break;
+        case 'D':
+          if(end > start) {
+            strncpy(cfg->dialno, (char *)command + start, end - start);
+            cfg->dialno[end - start] = '\0';
+            cfg->dial_type = (unsigned char)num;
+            cfg->last_dial_type = (unsigned char)num;
+            strncpy((char *)cfg->last_dialno, (char *)command+start, end - start);
+            cfg->last_dialno[end - start] = '\0';
+            cfg->memory_dial = FALSE;
+          } else if (num == 'L') {
+            strncpy(cfg->dialno, cfg->last_dialno, strlen(cfg->last_dialno));
+            cfg->dial_type = cfg->last_dial_type;
+            cfg->memory_dial = TRUE;
+            mdm_write(cfg, (unsigned char *)cfg->crlf, 2);
+            mdm_write(cfg, (unsigned char *)cfg->dialno, strlen(cfg->dialno));
+          } else {
+            cfg->dialno[0] = 0;
+            cfg->last_dialno[0] = 0;
+            cfg->dial_type = 0;
+            cfg->last_dial_type = 0;
+          }
+        if (strlen(cfg->dialno) > 0) {
+            mdm_connect(cfg);
+          } else {
+            mdm_off_hook(cfg);
+            cfg->is_cmd_mode = FALSE;
+          }
+          done = TRUE;
+          break;
+        case 'E':   // still need to define #2
+          if(num == 0)
+            cfg->is_echo = FALSE;
+          else if(num == 1)
+            cfg->is_echo = TRUE;
+          else {
+            cmd = AT_CMD_ERR;
+          }
+          break;
+        case 'H':
+            if(num == 0) {
+              mdm_disconnect(cfg, FALSE);
+            } else if(num == 1) {
+              mdm_off_hook(cfg);
+            } else
+              cmd = AT_CMD_ERR;
+            break;
+        case 'I':   // Information.
+          break;
+        case 'L':   // Speaker volume
+          if(num < 1 || num > 3)
+            cmd = AT_CMD_ERR;
+          else {
+            //cfg->volume = num;
+          }
+          break;
+        case 'M':   // speaker settings
+          if(num > 3)
+            cmd=AT_CMD_ERR;
+          else {
+            //cfg->speaker_setting = num;
+          }
+          break;
+        case 'N':   // automode negotiate
+          if(num > 1)
+            cmd=AT_CMD_ERR;
+          else {
+            //cfg->auto_mode=num;
+          }
+          break;
+        case 'P':   // defaut to pulse dialing
+          //cfg->default_dial_type=MDM_DT_PULSE;
+          break;
+        case 'Q':   // still need to define #2
+          if(num == 0)
+            cfg->send_responses = TRUE;
+          else if(num == 1)
+            cfg->send_responses = FALSE;
+          else if(num == 2)  // this should be yes orig/no answer.
+            cfg->send_responses = TRUE;
+          else {
+            cmd = AT_CMD_ERR;
+          }
+          break;
+        case 'S':
+          strncpy(tmp, command + start, end - start);
+          tmp[end - start] = '\0';
+          if(num < sizeof(cfg->s)) {
+            cfg->s[num] = atoi(tmp); // TODO do not assume this is always a number...
+            switch(num) {
+              case S_REG_CR:
+                cfg->crlf[0] = cfg->s[S_REG_CR];
+                break;
+              case S_REG_LF:
+                cfg->crlf[1] = cfg->s[S_REG_LF];
+                break;
+            }
+          } else {
+            LOG(LOG_DEBUG, "Ignoring S register %d=%s", num, tmp);
+          }
+          break;
+        case AT_CMD_FLAG_QUERY | 'S':
+          sprintf(tmp, "%s%3.3d", cfg->crlf, cfg->s[num]);
+          mdm_write(cfg, (unsigned char *)tmp, strlen(tmp));
+          break;
+        case 'T':   // defaut to tone dialing
+          //cfg->default_dial_type = MDM_DT_TONE;
+          break;
+        case 'V':   // done
+          if(num == 0)
+            cfg->text_responses = FALSE;
+          else if(num == 1)
+            cfg->text_responses = TRUE;
+          else {
+            cmd=AT_CMD_ERR;
+          }
+          break;
+        case 'W':
+            if(num > -1 && num < 3) 
+              cfg->connect_response = num;
+            else
+              cmd = AT_CMD_ERR;
+            break;
+        case 'X':
+            if(num > -1 && num < 5) 
+              cfg->response_code_level = num;
+            else
+              cmd = AT_CMD_ERR;
+            break;
+        case 'Y':   // long space disconnect.
+          if(num > 1)
+            cmd = AT_CMD_ERR;
+          else {
+            //cfg->long_disconnect = num;
+          }
+          break;
+        case 'Z':   // long space disconnect.
+          if(num > 1)
+            cmd = AT_CMD_ERR;
+          else {
+            // set config0 to cur_line and go.
+          }
+          break;
+        case AT_CMD_FLAG_EXT + 'C':
           switch(num) {
-            case S_REG_CR:
-              cfg->crlf[0] = cfg->s[S_REG_CR];
+            case 0:
+              cfg->force_dcd = TRUE;
+              mdm_set_control_lines(cfg);
               break;
-            case S_REG_LF:
-              cfg->crlf[1] = cfg->s[S_REG_LF];
+            case 1:
+              cfg->force_dcd = FALSE;
+              mdm_set_control_lines(cfg);
+              break;
+            default:
+              cmd = AT_CMD_ERR;
               break;
           }
-        } else {
-          LOG(LOG_DEBUG, "Ignoring S register %d=%s", num, tmp);
-        }
-        break;
-      case AT_CMD_FLAG_QUERY | 'S':
-        sprintf(tmp, "%s%3.3d", cfg->crlf, cfg->s[num]);
-        mdm_write(cfg, (unsigned char *)tmp, strlen(tmp));
-        break;
-      case 'T':   // defaut to tone dialing
-        //cfg->default_dial_type = MDM_DT_TONE;
-        break;
-      case 'V':   // done
-        if(num == 0)
-          cfg->text_responses = FALSE;
-        else if(num == 1)
-          cfg->text_responses = TRUE;
-        else {
-          cmd=AT_CMD_ERR;
-        }
-        break;
-      case 'W':
-          if(num > -1 && num < 3) 
-            cfg->connect_response = num;
-          else
-            cmd = AT_CMD_ERR;
           break;
-      case 'X':
-          if(num > -1 && num < 5) 
-            cfg->response_code_level = num;
-          else
-            cmd = AT_CMD_ERR;
+        case AT_CMD_FLAG_EXT + 'K':
+          // flow control.
+          switch (num) {
+            case 0:
+              dce_set_flow_control(&cfg->dce_data, 0);
+              break;
+            case 3:
+              dce_set_flow_control(&cfg->dce_data, MDM_FC_RTS);
+              break;
+            case 4:
+              dce_set_flow_control(&cfg->dce_data, MDM_FC_XON);
+              break;
+            case 5:
+              dce_set_flow_control(&cfg->dce_data, MDM_FC_XON);
+              // need to add passthrough..  Not sure how.
+              break;
+            case 6:
+              dce_set_flow_control(&cfg->dce_data, MDM_FC_XON | MDM_FC_RTS);
+              break;
+            default:
+              cmd=AT_CMD_ERR;
+              break;
+          }
           break;
-      case 'Y':   // long space disconnect.
-        if(num > 1)
-          cmd = AT_CMD_ERR;
-        else {
-          //cfg->long_disconnect = num;
-        }
-        break;
-      case 'Z':   // long space disconnect.
-        if(num > 1)
-          cmd = AT_CMD_ERR;
-        else {
-          // set config0 to cur_line and go.
-        }
-        break;
-      case AT_CMD_FLAG_EXT + 'C':
-        switch(num) {
-          case 0:
-            cfg->force_dcd = TRUE;
-            mdm_set_control_lines(cfg);
-            break;
-          case 1:
-            cfg->force_dcd = FALSE;
-            mdm_set_control_lines(cfg);
-            break;
-          default:
-            cmd = AT_CMD_ERR;
-            break;
-        }
-        break;
-      case AT_CMD_FLAG_EXT + 'K':
-        // flow control.
-        switch (num) {
-          case 0:
-            dce_set_flow_control(&cfg->dce_data, 0);
-            break;
-          case 3:
-            dce_set_flow_control(&cfg->dce_data, MDM_FC_RTS);
-            break;
-          case 4:
-            dce_set_flow_control(&cfg->dce_data, MDM_FC_XON);
-            break;
-          case 5:
-            dce_set_flow_control(&cfg->dce_data, MDM_FC_XON);
-            // need to add passthrough..  Not sure how.
-            break;
-          case 6:
-            dce_set_flow_control(&cfg->dce_data, MDM_FC_XON | MDM_FC_RTS);
-            break;
-          default:
-            cmd=AT_CMD_ERR;
-            break;
-        }
-        break;
-      default:
-        break;
+        default:
+          break;
+      }
     }
   }
   cfg->last_line_idx = cfg->cur_line_idx;
@@ -605,6 +642,11 @@ int mdm_handle_char(modem_config *cfg, unsigned char ch) {
       cfg->is_cmd_started = TRUE;
       dce_detect_parity(&cfg->dce_data, cfg->first_ch, ch);
       LOG(LOG_ALL,"'T' parsed in serial stream, switching to command parse mode");
+    } else if(((ch_raw & 0x5f) == 'M') && ((cfg->first_ch & 0x20) == (ch_raw & 0x20))) {
+      cfg->is_cmd_started = TRUE;
+      cfg->is_callerid = TRUE;
+      dce_detect_parity(&cfg->dce_data, cfg->first_ch, ch);
+      LOG(LOG_ALL,"'M' parsed in serial stream, switching to command parse mode (Caller ID mode)");
     } else if(ch_raw == '/') {
       LOG(LOG_ALL,"'/' parsed in the serial stream, replaying last command");
       cfg->cur_line_idx = cfg->last_line_idx;
@@ -612,9 +654,15 @@ int mdm_handle_char(modem_config *cfg, unsigned char ch) {
       cfg->is_cmd_started = FALSE;
     } else if((ch_raw & 0x5f) != 'A') {
       cfg->first_ch = 0;
+    } else if((ch_raw & 0x5f) != 'N') {
+      cfg->first_ch = 0;
     }
   } else if((ch_raw & 0x5f) == 'A') {
     LOG(LOG_ALL, "'A' parsed in serial stream");
+    cfg->first_ch = ch;
+  }
+   else if((ch_raw & 0x5f) == 'N') {
+    LOG(LOG_ALL, "'N' parsed in serial stream");
     cfg->first_ch = ch;
   }
   return 0;
