@@ -51,5 +51,6 @@ int getcmd(char line[],
            int *index, 
            int *num, 
            int *data_start, 
-           int *data_end
+           int *data_end,
+           int callerid_mode
           );

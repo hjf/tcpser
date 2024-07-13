@@ -46,3 +46,7 @@ int pb_search(char *number, char *address) {
   LOG_EXIT();
   return 0;
 }
+
+int pb_size() {
+  return size;
+}

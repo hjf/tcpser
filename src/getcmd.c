@@ -151,7 +151,8 @@ int getcmd(char line[],
            int *index, 
            int *num, 
            int *data_start, 
-           int *data_end
+           int *data_end,
+           int callerid_mode
           ) {
   int cmd = AT_CMD_END;
 
@@ -241,6 +242,8 @@ int getcmd(char line[],
         }
         break;
       case 'B':       // handle NMBR=
+        if(!callerid_mode)
+          return AT_CMD_ERR;
       case 'D':       // handle Dialing.
         (*index)++;
         *num = 0;
@@ -249,7 +252,10 @@ int getcmd(char line[],
             case 0:
                 return cmd;
             case 'R': // if NMBR=, skip the '='
-              (*index)++;
+              if(!callerid_mode)
+                return AT_CMD_ERR;
+              else
+                (*index)++;
             case 'T':
             case 'P':
             case 'L':
@@ -278,7 +284,7 @@ int main_getcmd(int argc, char **argv) {
   int cmd = 0;
 
   while(cmd != AT_CMD_END) {
-    cmd = getcmd(data, strlen(data), &index, &num, &start, &end);
+    cmd = getcmd(data, strlen(data), &index, &num, &start, &end, FALSE);
     printf("Cmd: %c Index: %d Num: %d Start: %d End: %d\n", cmd, index, num, start, end);
   }
   return 0;

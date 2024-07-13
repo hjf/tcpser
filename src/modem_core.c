@@ -333,7 +333,7 @@ int mdm_parse_cmd(modem_config* cfg) {
 
   while(TRUE != done ) {
     if(cmd != AT_CMD_ERR) {
-      cmd = getcmd(command, len, &index, &num, &start, &end);
+      cmd = getcmd(command, len, &index, &num, &start, &end, cfg->is_callerid);
       LOG(LOG_DEBUG,
           "Command: %c (%d), Flags: %d, index=%d, num=%d, data=%d-%d",
           (cmd > -1 ? cmd & 0xff : ' '),
@@ -642,7 +642,7 @@ int mdm_handle_char(modem_config *cfg, unsigned char ch) {
       cfg->is_cmd_started = TRUE;
       dce_detect_parity(&cfg->dce_data, cfg->first_ch, ch);
       LOG(LOG_ALL,"'T' parsed in serial stream, switching to command parse mode");
-    } else if(((ch_raw & 0x5f) == 'M') && ((cfg->first_ch & 0x20) == (ch_raw & 0x20))) {
+    } else if(((ch_raw & 0x5f) == 'M') && ((cfg->first_ch & 0x20) == (ch_raw & 0x20)) && cfg->enable_callerid == TRUE) {
       cfg->is_cmd_started = TRUE;
       cfg->is_callerid = TRUE;
       dce_detect_parity(&cfg->dce_data, cfg->first_ch, ch);
@@ -654,14 +654,14 @@ int mdm_handle_char(modem_config *cfg, unsigned char ch) {
       cfg->is_cmd_started = FALSE;
     } else if((ch_raw & 0x5f) != 'A') {
       cfg->first_ch = 0;
-    } else if((ch_raw & 0x5f) != 'N') {
+    } else if((ch_raw & 0x5f) != 'N' && cfg->enable_callerid == TRUE) {
       cfg->first_ch = 0;
     }
   } else if((ch_raw & 0x5f) == 'A') {
     LOG(LOG_ALL, "'A' parsed in serial stream");
     cfg->first_ch = ch;
   }
-   else if((ch_raw & 0x5f) == 'N') {
+   else if((ch_raw & 0x5f) == 'N' && cfg->enable_callerid == TRUE) {
     LOG(LOG_ALL, "'N' parsed in serial stream");
     cfg->first_ch = ch;
   }

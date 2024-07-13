@@ -120,6 +120,7 @@ typedef struct modem_config {
   int break_len;
   int disconnect_delay;
   char crlf[3];
+  int enable_callerid;
   int is_callerid;
 } modem_config;
 

@@ -39,6 +39,7 @@ void print_help(char* name) {
   fprintf(stderr, "  -T   filename to send upon inactivity timeout\n");
   fprintf(stderr, "  -i   modem init string (defaults to '', leave off 'at' prefix when specifying)\n");
   fprintf(stderr, "  -D   direct connection (follow with hostname:port for caller, : for receiver)\n");
+  fprintf(stderr, "  -m   support Caller ID NMBR= command (use with directory to map numbers to hosts)\n");
   exit(0);
 }
 
@@ -57,14 +58,16 @@ int init(int argc,
   char *tok;
   int dce_set = FALSE;
   int tty_set = FALSE;
+  int callerid_mode = FALSE;
 
   LOG_ENTER();
   mdm_init_config(&cfg[0]);
   cfg[0].dce_data.port_speed = 38400;
   cfg[0].line_speed = 38400;
+  cfg[0].enable_callerid = FALSE;
 
   while(opt>-1 && i < max_modem) {
-    opt=getopt(argc, argv, "p:s:S:d:v:hw:i:Il:L:t:n:a:A:c:C:N:B:T:D:V");
+    opt=getopt(argc, argv, "p:s:S:d:v:hw:i:Il:L:t:n:a:A:c:C:N:B:T:D:V:m");
     switch(opt) {
       case 't':
         trace_flags = log_get_trace_flags();
@@ -183,6 +186,9 @@ int init(int argc,
         printf("Copyright (C) 2004-%s Jim Brain (tcpser@jbrain.com)\n", __DATE__ + 7);
         exit(0);
         break;
+      case 'm':
+        callerid_mode = TRUE;
+        break;
     }
   }
 
@@ -193,6 +199,16 @@ int init(int argc,
     // no modems defined
     LOG(LOG_FATAL, "No modems defined");
     print_help(argv[0]);
+  }
+
+  if(callerid_mode) {
+    if(pb_size() == 0) {
+      LOG(LOG_FATAL, "Caller ID mode enabled, but no phone book entries defined");
+      print_help(argv[0]);
+    } else {
+      cfg[0].enable_callerid = TRUE;
+      LOG(LOG_DEBUG, "Caller ID mode enabled");
+    }
   }
 
   LOG(LOG_DEBUG, "Read configuration for %i serial port(s)", i);
